@@ -1,0 +1,130 @@
+x-backend-image: &backend-image
+  build:
+    context: ./backend
+  env_file: .env
+  environment:
+    - DATABASE_URL=${DATABASE_URL}
+    - SYNC_DATABASE_URL=${SYNC_DATABASE_URL}
+    - REDIS_URL=${REDIS_URL}
+    - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+  volumes:
+    - uploads:/data/uploads
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_started
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Uncomment to reach Postgres from the host during development:
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    # Uncomment for NVIDIA GPU passthrough (requires the NVIDIA container toolkit
+    # on the host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # Uncomment to reach Ollama from the host during development:
+    # ports:
+    #   - "11434:11434"
+    restart: unless-stopped
+
+  # One-shot: waits for Ollama then pulls the configured chat + embedding
+  # models, then exits. Makes `docker compose up` sufficient on a fresh
+  # server with no manual `ollama pull` step.
+  ollama-init:
+    image: ollama/ollama:latest
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until ollama --host ollama:11434 list >/dev/null 2>&1; do
+          echo "waiting for ollama..."; sleep 2;
+        done
+        echo "pulling ${OLLAMA_CHAT_MODEL}..."
+        OLLAMA_HOST=ollama:11434 ollama pull "${OLLAMA_CHAT_MODEL}"
+        echo "pulling ${OLLAMA_EMBED_MODEL}..."
+        OLLAMA_HOST=ollama:11434 ollama pull "${OLLAMA_EMBED_MODEL}"
+        echo "models ready."
+    depends_on:
+      - ollama
+    restart: "no"
+
+  api:
+    <<: *backend-image
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    expose:
+      - "8000"
+
+  worker:
+    <<: *backend-image
+    command: python -m app.workers.worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api:
+        condition: service_started
+
+  # Fires scheduled work (job-source polling sweeps, nightly salary refresh).
+  # Keep this at a single replica - running more than one scheduler instance
+  # will double-enqueue every scheduled task.
+  scheduler:
+    <<: *backend-image
+    command: python -m app.workers.scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      api:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+    environment:
+      - API_PROXY_TARGET=http://api:8000
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  ollama_data:
+  uploads:

@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "job-search-copilot-backend"
+version = "0.1.0"
+description = "AI job search copilot backend (FastAPI + Postgres/pgvector + RQ + Ollama)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0.35",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3.6",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "pyjwt>=2.9",
+    "argon2-cffi>=23.1",
+    "httpx>=0.27",
+    "pdfplumber>=0.11",
+    "python-docx>=1.1",
+    "weasyprint>=62.0",
+    "jinja2>=3.1",
+    "feedparser>=6.0",
+    "rq>=1.16",
+    "redis>=5.0",
+    "apscheduler>=3.10",
+    "python-multipart>=0.0.12",
+    "tenacity>=9.0",
+    "structlog>=24.4",
+    "email-validator>=2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+]
+
+[tool.setuptools.packages.find]
+# Only `app` is an installed package - alembic/ and tests/ are used
+# in-place (via `alembic upgrade head` / `pytest`, both run from this
+# directory), not imported as installed dependencies.
+include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
