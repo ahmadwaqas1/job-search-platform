@@ -43,15 +43,17 @@ services:
     image: ollama/ollama:latest
     volumes:
       - ollama_data:/root/.ollama
-    # Uncomment for NVIDIA GPU passthrough (requires the NVIDIA container toolkit
-    # on the host):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # NVIDIA GPU passthrough. Requires the host to actually expose a GPU to
+    # Docker first (see README) - if it doesn't, this makes the container
+    # fail to start rather than silently falling back to CPU, so it's kept
+    # commented out unless you have one.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     # Uncomment to reach Ollama from the host during development:
     # ports:
     #   - "11434:11434"

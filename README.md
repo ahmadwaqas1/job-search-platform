@@ -57,6 +57,46 @@ Short version of the two decisions that shape everything else:
 That's it - Postgres, Redis, Ollama, the API, a background worker, the
 scheduler, and the frontend are all running as one stack.
 
+### Using an NVIDIA GPU
+
+The `ollama` service in `docker-compose.yml` requests a GPU by default
+(`deploy.resources.reservations.devices` with `driver: nvidia`). If your
+machine doesn't expose a GPU to Docker, comment that block back out -
+otherwise the container will fail to start rather than silently falling
+back to CPU.
+
+**On Windows with Docker Desktop** (the common case - e.g. a laptop 4050):
+1. Install/update your NVIDIA driver normally on Windows itself (the one
+   you'd install for gaming) - recent drivers include WSL2 CUDA support
+   built in. You do **not** install CUDA or the NVIDIA Container Toolkit
+   inside WSL yourself; Docker Desktop's WSL2 engine handles that.
+2. Docker Desktop → Settings → General → "Use the WSL 2 based engine" must
+   be on (it's the default on modern installs).
+3. Restart Docker Desktop after a fresh driver install.
+4. `docker compose up -d --build ollama` (or the whole stack) - Compose
+   will pass the GPU through.
+
+**Verify it's actually being used**, after the containers are up:
+```
+docker exec -it job-search-ollama-1 nvidia-smi
+```
+(container name may differ slightly - check with `docker compose ps`). If
+that prints your GPU instead of erroring, the GPU is visible to the
+container. Then check Ollama is actually placing a model on it:
+```
+docker exec -it job-search-ollama-1 ollama ps
+```
+The `PROCESSOR` column shows something like `100% GPU` (or a `GPU/CPU`
+split) once a model has been used at least once - it won't say "GPU" for a
+model that's never been queried yet.
+
+**Note on your 6GB of VRAM**: `llama3.1:8b` at its default quantization is
+roughly 4.7GB, so it should fit with room to spare for the embedding model
+too; if you ever swap to a larger model and Ollama can't fit it all in
+VRAM, it automatically offloads the remaining layers to CPU rather than
+failing - `ollama ps`'s `PROCESSOR` column will show a split like
+`60%/40% CPU/GPU` in that case, still faster than pure CPU.
+
 ## Using it
 
 1. **Profile → CV**: upload an existing resume (PDF/DOCX/TXT) to have it
